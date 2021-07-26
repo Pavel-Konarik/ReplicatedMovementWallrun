@@ -22,19 +22,11 @@ void FSavedMove_My::Clear()
 uint8 FSavedMove_My::GetCompressedFlags() const
 {
 	uint8 Result = Super::GetCompressedFlags();
-
-	/* There are 4 custom move flags for us to use. Below is what each is currently being used for:
+	/*
 	FLAG_Custom_0		= 0x10, // Unused
 	FLAG_Custom_1		= 0x20, // Unused
 	FLAG_Custom_2		= 0x40, // Unused
 	FLAG_Custom_3		= 0x80, // Unused
-	*/
-
-	// Write to the compressed flags 
-
-	/*
-	if (bWallrunWantsToUnstick)
-		Result |= FLAG_Custom_0;
 	*/
 
 	return Result;
@@ -44,7 +36,6 @@ bool FSavedMove_My::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* 
 {
 	const FSavedMove_My* NewMove = static_cast<const FSavedMove_My*>(NewMovePtr.Get());
 
-	// As an optimization, check if the engine can combine saved moves.
 	if (bWallrunWantsToUnstick != NewMove->bWallrunWantsToUnstick)
 	{
 		return false;
@@ -101,8 +92,6 @@ void FSavedMove_My::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector
 		WallRunWallNormal = charMov->WallRunWallNormal;
 		CurrentWallRunEndGravity = charMov->CurrentWallRunEndGravity;
 		WallRunState = charMov->WallRunState;
-
-
 	}
 }
 
@@ -122,7 +111,6 @@ void FSavedMove_My::PrepMoveFor(class ACharacter* Character)
 		charMov->WallRunWallNormal = WallRunWallNormal;
 		charMov->CurrentWallRunEndGravity = CurrentWallRunEndGravity;
 		charMov->WallRunState = WallRunState;
-
 	}
 }
 
