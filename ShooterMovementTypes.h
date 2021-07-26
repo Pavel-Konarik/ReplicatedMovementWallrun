@@ -24,8 +24,8 @@ UENUM(BlueprintType)
 enum class EWallRunState : uint8
 {
 	Start 		UMETA(DisplayName = "Left", ToolTip = "Before reaching apex"),
-	Mid			UMETA(DisplayName = "Right", ToolTip = "After apex, going forward without gravity"),
-	End			UMETA(DisplayName = "End", ToolTip = "Increasing gravity to force fall"),
+	Mid		UMETA(DisplayName = "Right", ToolTip = "After apex, going forward without gravity"),
+	End		UMETA(DisplayName = "End", ToolTip = "Increasing gravity to force fall"),
 };
 
 USTRUCT(BlueprintType)
@@ -33,13 +33,13 @@ struct FWallRunJumpSettings
 {
 	GENERATED_BODY()
 
-		// Jump Forward velocity
-		UPROPERTY(EditAnywhere, BlueprintReadOnly)
-		float ForwardVelocity;
+	// Jump Forward velocity
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float ForwardVelocity;
 
 	// Jump Z Velocity
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-		float UpVelocity;
+	float UpVelocity;
 
 	FWallRunJumpSettings()
 	{
