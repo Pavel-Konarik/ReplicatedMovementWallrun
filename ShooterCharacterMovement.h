@@ -1,7 +1,5 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 /**
- * Movement component meant for use with Pawns.
+ * Movement component meant for use with Pawns with support for WallRunning
  */
 
 #pragma once
@@ -10,14 +8,6 @@
 #include "ShooterMovementTypes.h"
 #include "ShooterCharacterMovement.generated.h"
 
-
-/**
- * Modified functions in character:
- *		AWallrunCharacter::MoveForward - 
- *		AWallrunCharacter::MoveRight
- *		AWallrunCharacter::CanJumpInternal_Implementation
- *	
- */
 
 UCLASS()
 class UShooterCharacterMovement : public UCharacterMovementComponent
@@ -192,11 +182,6 @@ public:
 	/** Push when player requests unsticking from wall */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character Movement: Wall Running")
 	float WallRunUnstickVelocity = 300.0f;
-
-#pragma endregion
-
-#pragma region Sprinting Functions
-public:
 
 #pragma endregion
 
