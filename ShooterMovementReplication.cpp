@@ -4,44 +4,69 @@
 #include "ShooterMovementReplication.h"
 #include "ShooterCharacterMovement.h"
 #include <GameFramework/Character.h>
+#include "ShooterCharacter.h"
 
 
-void FSavedMove_My::Clear()
+void FSavedMove_ShooterCharacter::Clear()
 {
 	Super::Clear();
 
 	// Clear all values
 	bWallrunWantsToUnstick = 0;
-	WantsToUnstickTime = 0.0f;
+	WantsToUnstickTimeRemaining = 0.0f;
 	WallRunSide = EWallRunSide::Left;
 	WallRunWallNormal = FVector::ZeroVector;
 	CurrentWallRunEndGravity = 1.0f;
 	WallRunState = EWallRunState::End;
+
+	WallRunTimeRemaining = 0.0f;
+	WallRunCooldownLeftTimeRemaining = 0.0f;
+	WallRunCooldownRightTimeRemaining = 0.0f;
 }
 
-uint8 FSavedMove_My::GetCompressedFlags() const
+uint8 FSavedMove_ShooterCharacter::GetCompressedFlags() const
 {
 	uint8 Result = Super::GetCompressedFlags();
-	/*
+	/* 
 	FLAG_Custom_0		= 0x10, // Unused
 	FLAG_Custom_1		= 0x20, // Unused
 	FLAG_Custom_2		= 0x40, // Unused
 	FLAG_Custom_3		= 0x80, // Unused
 	*/
-
+	
 	return Result;
 }
 
-bool FSavedMove_My::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* Character, float MaxDelta) const
+bool FSavedMove_ShooterCharacter::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* Character, float MaxDelta) const
 {
-	const FSavedMove_My* NewMove = static_cast<const FSavedMove_My*>(NewMovePtr.Get());
+	const FSavedMove_ShooterCharacter* NewMove = static_cast<const FSavedMove_ShooterCharacter*>(NewMovePtr.Get());
 
+	AShooterCharacter* ShooterCharacter = Cast<AShooterCharacter>(Character);
+
+	// As an optimization, check if the engine can combine saved moves.
 	if (bWallrunWantsToUnstick != NewMove->bWallrunWantsToUnstick)
 	{
 		return false;
 	}
 
-	if (WantsToUnstickTime != NewMove->WantsToUnstickTime)
+	// TIMERS
+	// Don't combine on changes to/from zero WantsToUnstickTime.
+	if ((WantsToUnstickTimeRemaining == 0.f) != (NewMove->WantsToUnstickTimeRemaining == 0.f))
+	{
+		return false;
+	}
+
+	if ((WallRunTimeRemaining == 0.f) != (NewMove->WallRunTimeRemaining == 0.f))
+	{
+		return false;
+	}
+
+	if ((WallRunCooldownLeftTimeRemaining == 0.f) != (NewMove->WallRunCooldownLeftTimeRemaining == 0.f))
+	{
+		return false;
+	}
+
+	if ((WallRunCooldownRightTimeRemaining == 0.f) != (NewMove->WallRunCooldownRightTimeRemaining == 0.f))
 	{
 		return false;
 	}
@@ -50,33 +75,57 @@ bool FSavedMove_My::CanCombineWith(const FSavedMovePtr& NewMovePtr, ACharacter* 
 		return false;
 	}
 
-	if (WallRunWallNormal != NewMove->WallRunWallNormal) {
-		return false;
-	}
-
-	if (CurrentWallRunEndGravity != NewMove->CurrentWallRunEndGravity)
-	{
-		return false;
-	}
-
 	if (WallRunState != NewMove->WallRunState) {
 		return false;
 	}
 
+
+	if (!WallRunWallNormal.Equals(NewMove->WallRunWallNormal, WallNormalThresholdCombine))
+	{
+		return false;
+	}
+
+	if (ShooterCharacter == nullptr) {
+		UE_LOG(LogTemp, Warning, TEXT("FSavedMove_ShooterCharacter::CanCombineWith - Failed to get ShooterCharacter, Saved move combination is disabled."));
+		return false;
+	}
+
+	UShooterCharacterMovement* MovementComp = Cast<UShooterCharacterMovement>(ShooterCharacter->GetMovementComponent());
+	if (MovementComp == nullptr) {
+		UE_LOG(LogTemp, Warning, TEXT("FSavedMove_ShooterCharacter::CanCombineWith - Failed to get ShooterCharacterMovement, Saved move combination is disabled."));
+		return false;
+	}
+
+	if ((CurrentWallRunEndGravity == MovementComp->WallRunGravityEndState) != (NewMove->WallRunCooldownRightTimeRemaining == MovementComp->WallRunGravityEndState))
+	{
+		return false;
+	}
+	
 	return Super::CanCombineWith(NewMovePtr, Character, MaxDelta);
 }
 
-void FSavedMove_My::CombineWith(const FSavedMove_Character* NewMove, ACharacter* InCharacter, APlayerController* PC, const FVector& OldStartLocation)
+void FSavedMove_ShooterCharacter::CombineWith(const FSavedMove_Character* OldMove, ACharacter* InCharacter, APlayerController* PC, const FVector& OldStartLocation)
 {
-	const FSavedMove_My* NewMove2 = static_cast<const FSavedMove_My*>(NewMove);
+	const FSavedMove_ShooterCharacter* OldMoveShooter = static_cast<const FSavedMove_ShooterCharacter*>(OldMove);
 
-	bWallrunWantsToUnstick = NewMove2->bWallrunWantsToUnstick;
-	WantsToUnstickTime = NewMove2->WantsToUnstickTime;
+	UShooterCharacterMovement* charMov = static_cast<UShooterCharacterMovement*>(InCharacter->GetCharacterMovement());
+	if (charMov)
+	{
+		// Roll back timers. SetMoveFor() will copy them to the saved move. We miss a tick, but delta will be greater
+		charMov->WantsToUnstickTimeRemaining = OldMoveShooter->WantsToUnstickTimeRemaining;
+		charMov->WallRunTimeRemaining = OldMoveShooter->WallRunTimeRemaining;
+		charMov->WallRunCooldownLeftTimeRemaining = OldMoveShooter->WallRunCooldownLeftTimeRemaining;
+		charMov->WallRunCooldownRightTimeRemaining = OldMoveShooter->WallRunCooldownRightTimeRemaining;
 
-	Super::CombineWith(NewMove2, InCharacter, PC, OldStartLocation);
+
+		// Normals are close enough, but we get the average of them anyway
+		charMov->WallRunWallNormal = ((WallRunWallNormal + OldMoveShooter->WallRunWallNormal) / 2.0f).GetSafeNormal();
+	}
+
+	Super::CombineWith(OldMoveShooter, InCharacter, PC, OldStartLocation);
 }
 
-void FSavedMove_My::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel, class FNetworkPredictionData_Client_Character& ClientData)
+void FSavedMove_ShooterCharacter::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel, class FNetworkPredictionData_Client_Character& ClientData)
 {
 	Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
 
@@ -87,7 +136,10 @@ void FSavedMove_My::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector
 
 		// Wallrunning
 		bWallrunWantsToUnstick = charMov->bWallrunWantsToUnstick;
-		WantsToUnstickTime = charMov->WantsToUnstickTime;
+		WallRunTimeRemaining = charMov->WallRunTimeRemaining;
+		WallRunCooldownLeftTimeRemaining = charMov->WallRunCooldownLeftTimeRemaining;
+		WallRunCooldownRightTimeRemaining = charMov->WallRunCooldownRightTimeRemaining;
+		WantsToUnstickTimeRemaining = charMov->WantsToUnstickTimeRemaining;
 		WallRunSide = charMov->WallRunSide;
 		WallRunWallNormal = charMov->WallRunWallNormal;
 		CurrentWallRunEndGravity = charMov->CurrentWallRunEndGravity;
@@ -95,7 +147,7 @@ void FSavedMove_My::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector
 	}
 }
 
-void FSavedMove_My::PrepMoveFor(class ACharacter* Character)
+void FSavedMove_ShooterCharacter::PrepMoveFor(class ACharacter* Character)
 {
 	Super::PrepMoveFor(Character);
 
@@ -106,17 +158,21 @@ void FSavedMove_My::PrepMoveFor(class ACharacter* Character)
 
 		// Wallrunning
 		charMov->bWallrunWantsToUnstick = bWallrunWantsToUnstick;
-		charMov->WantsToUnstickTime = WantsToUnstickTime;
+		charMov->WantsToUnstickTimeRemaining = WantsToUnstickTimeRemaining;
+		charMov->WallRunTimeRemaining = WallRunTimeRemaining;
+		charMov->WallRunCooldownLeftTimeRemaining = WallRunCooldownLeftTimeRemaining;
+		charMov->WallRunCooldownRightTimeRemaining = WallRunCooldownRightTimeRemaining;
 		charMov->WallRunSide = WallRunSide;
 		charMov->WallRunWallNormal = WallRunWallNormal;
 		charMov->CurrentWallRunEndGravity = CurrentWallRunEndGravity;
 		charMov->WallRunState = WallRunState;
+
 	}
 }
 
-bool FSavedMove_My::IsImportantMove(const FSavedMovePtr& LastAckedMove) const
+bool FSavedMove_ShooterCharacter::IsImportantMove(const FSavedMovePtr& LastAckedMove) const
 {
-	const FSavedMove_My* NewMove = static_cast<const FSavedMove_My*>(LastAckedMove.Get());
+	const FSavedMove_ShooterCharacter* NewMove = static_cast<const FSavedMove_ShooterCharacter*>(LastAckedMove.Get());
 
 	if (bWallrunWantsToUnstick != NewMove->bWallrunWantsToUnstick)
 	{
@@ -126,15 +182,15 @@ bool FSavedMove_My::IsImportantMove(const FSavedMovePtr& LastAckedMove) const
 	return Super::IsImportantMove(LastAckedMove);
 }
 
-FNetworkPredictionData_Client_My::FNetworkPredictionData_Client_My(const UCharacterMovementComponent& ClientMovement)
+FNetworkPredictionData_Client_ShooterCharacter::FNetworkPredictionData_Client_ShooterCharacter(const UCharacterMovementComponent& ClientMovement)
 	: Super(ClientMovement)
 {
 
 }
 
-FSavedMovePtr FNetworkPredictionData_Client_My::AllocateNewMove()
+FSavedMovePtr FNetworkPredictionData_Client_ShooterCharacter::AllocateNewMove()
 {
-	return FSavedMovePtr(new FSavedMove_My());
+	return FSavedMovePtr(new FSavedMove_ShooterCharacter());
 }
 
 bool FShooterCharacterNetworkMoveData::Serialize(
@@ -151,12 +207,12 @@ void FShooterCharacterNetworkMoveData::ClientFillNetworkMoveData(
 	const FSavedMove_Character& ClientMove, ENetworkMoveType MoveType)
 {
 	Super::ClientFillNetworkMoveData(ClientMove, MoveType);
-	const FSavedMove_My& Move = static_cast<const FSavedMove_My&>(ClientMove);
+	const FSavedMove_ShooterCharacter& Move = static_cast<const FSavedMove_ShooterCharacter&>(ClientMove);
 
 	bWantsToUnstick = Move.bWallrunWantsToUnstick;
 }
 
-FBFCharacterNetworkMoveDataContainer::FBFCharacterNetworkMoveDataContainer() : Super()
+FShooterCharacterNetworkMoveDataContainer::FShooterCharacterNetworkMoveDataContainer() : Super()
 {
 	NewMoveData = &BFDefaultMoveData[0];
 	PendingMoveData = &BFDefaultMoveData[1];
